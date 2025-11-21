@@ -6,6 +6,29 @@ let events = JSON.parse(localStorage.getItem('events')) || [];
 const ADMIN_USERNAME = 'hamdar-admin';
 const ADMIN_PASSWORD = 'hamdar123';
 
+// === CONFIGURAÇÃO DO FIREBASE ===
+const firebaseConfig = {
+    apiKey: "AIzaSyCSAevGFmbue9ArGhzkBmXIXHRfB6EaYkA",
+    authDomain: "dojo-hamdar.firebaseapp.com",
+    projectId: "dojo-hamdar",
+    storageBucket: "dojo-hamdar.firebasestorage.app",
+    messagingSenderId: "601678346574",
+    appId: "1:601678346574:web:00e4ffc7cf3b0d430d861f",
+    measurementId: "G-X804DSPVRS"
+};
+
+// Inicialização do Firebase
+let db;
+try {
+    if (typeof firebase !== 'undefined' && firebase.app) {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        console.log('Firebase inicializado com sucesso!');
+    }
+} catch (error) {
+    console.log('Firebase não disponível, usando localStorage');
+}
+
 // Elementos da página
 const loginPage = document.getElementById('login-page');
 const registerPage = document.getElementById('register-page');
@@ -22,11 +45,210 @@ const createEventModal = document.getElementById('create-event-modal');
 const manageExamModal = document.getElementById('manage-exam-modal');
 const manageEventModal = document.getElementById('manage-event-modal');
 
+// === FUNÇÕES FIREBASE ===
+async function saveAthleteToFirebase(athlete) {
+    if (!db) {
+        console.log('Firebase não disponível, salvando apenas no localStorage');
+        return;
+    }
+    
+    try {
+        await db.collection('athletes').doc(athlete.id).set(athlete);
+        console.log('Atleta salvo no Firebase:', athlete.name);
+    } catch (error) {
+        console.error('Erro ao salvar no Firebase:', error);
+    }
+}
+
+async function updateAthleteInFirebase(athleteId, updates) {
+    if (!db) return;
+    
+    try {
+        await db.collection('athletes').doc(athleteId).update(updates);
+        console.log('Atleta atualizado no Firebase:', athleteId);
+    } catch (error) {
+        console.error('Erro ao atualizar no Firebase:', error);
+    }
+}
+
+async function deleteAthleteFromFirebase(athleteId) {
+    if (!db) return;
+    
+    try {
+        await db.collection('athletes').doc(athleteId).delete();
+        console.log('Atleta deletado do Firebase:', athleteId);
+    } catch (error) {
+        console.error('Erro ao deletar do Firebase:', error);
+    }
+}
+
+async function saveEventToFirebase(event) {
+    if (!db) return;
+    
+    try {
+        await db.collection('events').doc(event.id).set(event);
+        console.log('Evento salvo no Firebase:', event.name);
+    } catch (error) {
+        console.error('Erro ao salvar evento no Firebase:', error);
+    }
+}
+
+async function updateEventInFirebase(eventId, updates) {
+    if (!db) return;
+    
+    try {
+        await db.collection('events').doc(eventId).update(updates);
+        console.log('Evento atualizado no Firebase:', eventId);
+    } catch (error) {
+        console.error('Erro ao atualizar evento no Firebase:', error);
+    }
+}
+
+async function deleteEventFromFirebase(eventId) {
+    if (!db) return;
+    
+    try {
+        await db.collection('events').doc(eventId).delete();
+        console.log('Evento deletado do Firebase:', eventId);
+    } catch (error) {
+        console.error('Erro ao deletar evento do Firebase:', error);
+    }
+}
+
+async function loadAllDataFromFirebase() {
+    if (!db) {
+        console.log('Firebase não disponível, carregando do localStorage');
+        return;
+    }
+    
+    try {
+        // Carregar atletas
+        const athletesSnapshot = await db.collection('athletes').get();
+        const loadedAthletes = [];
+        
+        athletesSnapshot.forEach(doc => {
+            loadedAthletes.push(doc.data());
+        });
+        
+        if (loadedAthletes.length > 0) {
+            athletes = loadedAthletes;
+            localStorage.setItem('athletes', JSON.stringify(athletes));
+            console.log('Atletas carregados do Firebase:', loadedAthletes.length);
+        }
+        
+        // Carregar eventos
+        const eventsSnapshot = await db.collection('events').get();
+        const loadedEvents = [];
+        
+        eventsSnapshot.forEach(doc => {
+            loadedEvents.push(doc.data());
+        });
+        
+        if (loadedEvents.length > 0) {
+            events = loadedEvents;
+            localStorage.setItem('events', JSON.stringify(events));
+            console.log('Eventos carregados do Firebase:', loadedEvents.length);
+        }
+        
+    } catch (error) {
+        console.error('Erro ao carregar do Firebase:', error);
+    }
+}
+
+function setupRealtimeSync() {
+    if (!db) return;
+    
+    // Sincronização em tempo real para atletas
+    db.collection('athletes').onSnapshot((snapshot) => {
+        const updatedAthletes = [];
+        snapshot.forEach(doc => {
+            updatedAthletes.push(doc.data());
+        });
+        
+        athletes = updatedAthletes;
+        localStorage.setItem('athletes', JSON.stringify(athletes));
+        
+        // Atualizar a interface se necessário
+        if (!homePage.classList.contains('hidden')) {
+            renderDashboard();
+        }
+        if (!listPage.classList.contains('hidden')) {
+            renderAthleteList();
+        }
+        
+        console.log('Dados sincronizados em tempo real - Atletas:', updatedAthletes.length);
+    });
+    
+    // Sincronização em tempo real para eventos
+    db.collection('events').onSnapshot((snapshot) => {
+        const updatedEvents = [];
+        snapshot.forEach(doc => {
+            updatedEvents.push(doc.data());
+        });
+        
+        events = updatedEvents;
+        localStorage.setItem('events', JSON.stringify(events));
+        
+        // Atualizar a interface se necessário
+        if (!eventsPage.classList.contains('hidden')) {
+            renderEventsPage();
+        }
+        
+        console.log('Dados sincronizados em tempo real - Eventos:', updatedEvents.length);
+    });
+}
+
 // Inicialização quando a página carrega
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    await initializeFirebase();
     initializeApp();
 });
 
+async function initializeFirebase() {
+    try {
+        // Carrega os scripts do Firebase se não estiverem carregados
+        if (typeof firebase === 'undefined') {
+            await loadFirebaseScripts();
+        }
+        
+        // Inicializa o Firebase
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        
+        // Carrega dados do Firebase
+        await loadAllDataFromFirebase();
+        
+        // Configura sincronização em tempo real
+        setupRealtimeSync();
+        
+        console.log('Firebase configurado com sucesso!');
+    } catch (error) {
+        console.log('Firebase não pôde ser inicializado, usando apenas localStorage:', error);
+    }
+}
+
+function loadFirebaseScripts() {
+    return new Promise((resolve, reject) => {
+        if (typeof firebase !== 'undefined') {
+            resolve();
+            return;
+        }
+        
+        const script1 = document.createElement('script');
+        script1.src = 'https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js';
+        script1.onload = () => {
+            const script2 = document.createElement('script');
+            script2.src = 'https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js';
+            script2.onload = resolve;
+            script2.onerror = reject;
+            document.head.appendChild(script2);
+        };
+        script1.onerror = reject;
+        document.head.appendChild(script1);
+    });
+}
+
+// === FUNÇÕES EXISTENTES (ATUALIZADAS) ===
 function initializeApp() {
     // Navegação
     document.getElementById('nav-home').addEventListener('click', function(e) {
@@ -250,9 +472,10 @@ function logout() {
     showPage('login');
 }
 
-// Funções de atletas
-function handleRegister(e) {
+// === FUNÇÕES PRINCIPAIS ATUALIZADAS ===
+async function handleRegister(e) {
     e.preventDefault();
+    
     const name = document.getElementById('register-name').value;
     const email = document.getElementById('register-email').value;
     const password = document.getElementById('register-password').value;
@@ -288,6 +511,8 @@ function handleRegister(e) {
         photo: null
     };
     
+    // Salvar no Firebase E no localStorage
+    await saveAthleteToFirebase(newAthlete);
     athletes.push(newAthlete);
     localStorage.setItem('athletes', JSON.stringify(athletes));
     
@@ -301,7 +526,7 @@ function handleRegister(e) {
     showPage('home');
 }
 
-function handleAddAthlete(e) {
+async function handleAddAthlete(e) {
     e.preventDefault();
     const name = document.getElementById('add-athlete-name').value;
     const email = document.getElementById('add-athlete-email').value;
@@ -337,6 +562,8 @@ function handleAddAthlete(e) {
         photo: null
     };
     
+    // Salvar no Firebase E no localStorage
+    await saveAthleteToFirebase(newAthlete);
     athletes.push(newAthlete);
     localStorage.setItem('athletes', JSON.stringify(athletes));
     
@@ -366,7 +593,7 @@ function showEditProfileModal() {
     editProfileModal.classList.add('active');
 }
 
-function handleEditProfile(e) {
+async function handleEditProfile(e) {
     e.preventDefault();
     
     const name = document.getElementById('edit-profile-name').value;
@@ -388,30 +615,27 @@ function handleEditProfile(e) {
     // Atualizar dados do usuário atual
     const athleteIndex = athletes.findIndex(a => a.id === currentUser.id);
     if (athleteIndex !== -1) {
-        athletes[athleteIndex].name = name;
-        athletes[athleteIndex].email = email;
-        athletes[athleteIndex].rg = rg;
-        athletes[athleteIndex].birthdate = birthdate;
-        athletes[athleteIndex].instagram = instagram;
-        athletes[athleteIndex].facebook = facebook;
-        athletes[athleteIndex].tkdBelt = tkdBelt;
-        athletes[athleteIndex].hpkBelt = hpkBelt;
-        athletes[athleteIndex].weight = weight;
+        const updates = {
+            name,
+            email,
+            rg,
+            birthdate,
+            instagram,
+            facebook,
+            tkdBelt,
+            hpkBelt,
+            weight
+        };
         
+        // Atualizar no Firebase E no localStorage
+        await updateAthleteInFirebase(currentUser.id, updates);
+        
+        athletes[athleteIndex] = { ...athletes[athleteIndex], ...updates };
         localStorage.setItem('athletes', JSON.stringify(athletes));
     }
     
     // Atualizar currentUser
-    currentUser.name = name;
-    currentUser.email = email;
-    currentUser.rg = rg;
-    currentUser.birthdate = birthdate;
-    currentUser.instagram = instagram;
-    currentUser.facebook = facebook;
-    currentUser.tkdBelt = tkdBelt;
-    currentUser.hpkBelt = hpkBelt;
-    currentUser.weight = weight;
-    
+    currentUser = { ...currentUser, name, email, rg, birthdate, instagram, facebook, tkdBelt, hpkBelt, weight };
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
     
     showAlert('home-alert', 'Perfil atualizado com sucesso!', 'success');
@@ -433,7 +657,7 @@ function showChangePhotoModal() {
     changePhotoModal.classList.add('active');
 }
 
-function handleChangePhoto(e) {
+async function handleChangePhoto(e) {
     e.preventDefault();
     
     const fileInput = document.getElementById('photo-upload');
@@ -457,12 +681,17 @@ function handleChangePhoto(e) {
     }
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         const photoData = e.target.result;
         
         // Atualizar foto do usuário atual
         const athleteIndex = athletes.findIndex(a => a.id === currentUser.id);
         if (athleteIndex !== -1) {
+            const updates = { photo: photoData };
+            
+            // Atualizar no Firebase E no localStorage
+            await updateAthleteInFirebase(currentUser.id, updates);
+            
             athletes[athleteIndex].photo = photoData;
             localStorage.setItem('athletes', JSON.stringify(athletes));
         }
@@ -479,12 +708,17 @@ function handleChangePhoto(e) {
     reader.readAsDataURL(file);
 }
 
-function removeProfilePhoto() {
+async function removeProfilePhoto() {
     if (!currentUser) return;
     
     // Remover foto do usuário atual
     const athleteIndex = athletes.findIndex(a => a.id === currentUser.id);
     if (athleteIndex !== -1) {
+        const updates = { photo: null };
+        
+        // Atualizar no Firebase E no localStorage
+        await updateAthleteInFirebase(currentUser.id, updates);
+        
         athletes[athleteIndex].photo = null;
         localStorage.setItem('athletes', JSON.stringify(athletes));
     }
@@ -520,7 +754,7 @@ function showEditAthleteModal(athleteId) {
     editAthleteModal.classList.add('active');
 }
 
-function handleEditAthlete(e) {
+async function handleEditAthlete(e) {
     e.preventDefault();
     
     const athleteId = document.getElementById('edit-athlete-id').value;
@@ -545,22 +779,28 @@ function handleEditAthlete(e) {
     // Atualizar dados do atleta
     const athleteIndex = athletes.findIndex(a => a.id === athleteId);
     if (athleteIndex !== -1) {
-        athletes[athleteIndex].name = name;
-        athletes[athleteIndex].email = email;
-        athletes[athleteIndex].rg = rg;
-        athletes[athleteIndex].birthdate = birthdate;
-        athletes[athleteIndex].instagram = instagram;
-        athletes[athleteIndex].facebook = facebook;
-        athletes[athleteIndex].tkdBelt = tkdBelt;
-        athletes[athleteIndex].hpkBelt = hpkBelt;
-        athletes[athleteIndex].weight = weight;
-        athletes[athleteIndex].status = status;
+        const updates = {
+            name,
+            email,
+            rg,
+            birthdate,
+            instagram,
+            facebook,
+            tkdBelt,
+            hpkBelt,
+            weight,
+            status
+        };
         
         // Atualizar senha se fornecida
         if (password) {
-            athletes[athleteIndex].password = password;
+            updates.password = password;
         }
         
+        // Atualizar no Firebase E no localStorage
+        await updateAthleteInFirebase(athleteId, updates);
+        
+        athletes[athleteIndex] = { ...athletes[athleteIndex], ...updates };
         localStorage.setItem('athletes', JSON.stringify(athletes));
         
         // Se for o usuário atual, atualizar também
@@ -576,7 +816,7 @@ function handleEditAthlete(e) {
     renderAthleteList();
 }
 
-// Funções de renderização
+// Funções de renderização (mantidas iguais)
 function renderDashboard() {
     const userDashboard = document.getElementById('user-dashboard');
     const adminDashboard = document.getElementById('admin-dashboard');
@@ -804,7 +1044,284 @@ function renderAthleteList() {
     });
 }
 
-// Funções de eventos (mantidas as mesmas)
+// Funções de eventos (atualizadas com Firebase)
+async function handleCreateExam(e) {
+    e.preventDefault();
+    const name = document.getElementById('exam-name').value;
+    const date = document.getElementById('exam-date').value;
+    const type = document.getElementById('exam-type').value;
+    
+    // Coletar participantes selecionados
+    const selectedAthletes = [];
+    const checkboxes = document.querySelectorAll('#exam-athletes-list input[type="checkbox"]:checked');
+    checkboxes.forEach(checkbox => {
+        const athleteId = checkbox.value;
+        const athlete = athletes.find(a => a.id === athleteId);
+        if (athlete) {
+            selectedAthletes.push({
+                athleteId: athlete.id,
+                name: athlete.name,
+                currentTkdBelt: athlete.tkdBelt,
+                currentHpkBelt: athlete.hpkBelt,
+                passed: false,
+                newTkdBelt: athlete.tkdBelt,
+                newHpkBelt: athlete.hpkBelt
+            });
+        }
+    });
+    
+    if (selectedAthletes.length === 0) {
+        showAlert('events-alert', 'Selecione pelo menos um atleta para o exame.', 'error');
+        return;
+    }
+    
+    const newExam = {
+        id: Date.now().toString(),
+        type: 'exam',
+        examType: type,
+        name,
+        date,
+        participants: selectedAthletes,
+        completed: false,
+        createdAt: new Date().toISOString()
+    };
+    
+    // Salvar no Firebase E no localStorage
+    await saveEventToFirebase(newExam);
+    events.push(newExam);
+    localStorage.setItem('events', JSON.stringify(events));
+    
+    showAlert('events-alert', 'Exame criado com sucesso!', 'success');
+    document.getElementById('create-exam-form').reset();
+    createExamModal.classList.remove('active');
+    
+    renderEventsPage();
+}
+
+async function handleCreateEvent(e) {
+    e.preventDefault();
+    const type = document.getElementById('event-type').value;
+    const name = document.getElementById('event-name').value;
+    const date = document.getElementById('event-date').value;
+    const description = document.getElementById('event-description').value;
+    
+    // Coletar participantes selecionados
+    const selectedAthletes = [];
+    const checkboxes = document.querySelectorAll('#event-athletes-list input[type="checkbox"]:checked');
+    checkboxes.forEach(checkbox => {
+        const athleteId = checkbox.value;
+        const athlete = athletes.find(a => a.id === athleteId);
+        if (athlete) {
+            selectedAthletes.push({
+                athleteId: athlete.id,
+                name: athlete.name
+            });
+        }
+    });
+    
+    const newEvent = {
+        id: Date.now().toString(),
+        type,
+        name,
+        date,
+        description,
+        participants: selectedAthletes,
+        completed: false,
+        createdAt: new Date().toISOString()
+    };
+    
+    // Salvar no Firebase E no localStorage
+    await saveEventToFirebase(newEvent);
+    events.push(newEvent);
+    localStorage.setItem('events', JSON.stringify(events));
+    
+    showAlert('events-alert', 'Evento criado com sucesso!', 'success');
+    document.getElementById('create-event-form').reset();
+    createEventModal.classList.remove('active');
+    
+    renderEventsPage();
+}
+
+// Funções de ações (atualizadas)
+async function approveAthlete(athleteId) {
+    const athlete = athletes.find(a => a.id === athleteId);
+    if (!athlete) return;
+    
+    // Atualizar no Firebase E no localStorage
+    await updateAthleteInFirebase(athleteId, { status: 'approved' });
+    
+    athlete.status = 'approved';
+    localStorage.setItem('athletes', JSON.stringify(athletes));
+    
+    if (currentUser && currentUser.id === athleteId) {
+        currentUser.status = 'approved';
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    }
+    
+    renderAthleteList();
+    renderDashboard();
+    showAlert('home-alert', 'Atleta aprovado com sucesso!', 'success');
+}
+
+async function deleteAthlete(athleteId) {
+    if (confirm('Tem certeza que deseja excluir este atleta?')) {
+        // Deletar do Firebase E do localStorage
+        await deleteAthleteFromFirebase(athleteId);
+        athletes = athletes.filter(a => a.id !== athleteId);
+        localStorage.setItem('athletes', JSON.stringify(athletes));
+        
+        if (currentUser && currentUser.id === athleteId) {
+            logout();
+        } else {
+            renderAthleteList();
+            renderDashboard();
+            showAlert('list-alert', 'Atleta excluído com sucesso!', 'success');
+        }
+    }
+}
+
+async function deleteEvent(eventId) {
+    if (confirm('Tem certeza que deseja excluir este evento?')) {
+        // Deletar do Firebase E do localStorage
+        await deleteEventFromFirebase(eventId);
+        events = events.filter(e => e.id !== eventId);
+        localStorage.setItem('events', JSON.stringify(events));
+        renderEventsPage();
+        showAlert('events-alert', 'Evento excluído com sucesso!', 'success');
+    }
+}
+
+// Funções utilitárias (mantidas iguais)
+function getBeltName(beltKey) {
+    const beltNames = {
+        'white': 'Branca', 'gray': 'Cinza', 'yellow': 'Amarela', 'orange': 'Laranja',
+        'green': 'Verde', 'blue-light': 'Azul Claro', 'blue-dark': 'Azul Escuro',
+        'blue': 'Azul', 'brown': 'Marrom', 'purple': 'Roxa', 'red': 'Vermelha',
+        'red-black': 'Ponta Preta', 'black': 'Preta'
+    };
+    
+    return beltNames[beltKey] || beltKey;
+}
+
+function getExamTypeName(type) {
+    const typeNames = {
+        'tkd': 'Taekwondo',
+        'hpk': 'Hapkido',
+        'both': 'Taekwondo e Hapkido'
+    };
+    
+    return typeNames[type] || type;
+}
+
+function getEventTypeName(type) {
+    const typeNames = {
+        'exam': 'Exame de Faixa',
+        'seminar': 'Seminário',
+        'championship': 'Campeonato',
+        'training': 'Treinamento',
+        'other': 'Outro'
+    };
+    
+    return typeNames[type] || type;
+}
+
+function generateBeltOptions(type, currentBelt, selectedBelt) {
+    const beltsTkd = ['white', 'yellow', 'orange', 'green', 'blue-light', 'blue-dark', 'purple', 'red', 'red-black', 'black'];
+    const beltsHpk = ['white', 'gray', 'yellow', 'orange', 'green', 'blue', 'brown', 'red', 'red-black', 'black'];
+    
+    const belts = type === 'tkd' ? beltsTkd : beltsHpk;
+    let options = '';
+    
+    belts.forEach(belt => {
+        if (belts.indexOf(belt) >= belts.indexOf(currentBelt)) {
+            options += `<option value="${belt}" ${belt === selectedBelt ? 'selected' : ''}>${getBeltName(belt)}</option>`;
+        }
+    });
+    
+    return options;
+}
+
+function updateUserWeight() {
+    const newWeight = parseFloat(document.getElementById('update-weight').value);
+    if (isNaN(newWeight)) {
+        showAlert('home-alert', 'Por favor, insira um peso válido.', 'error');
+        return;
+    }
+    
+    const athleteIndex = athletes.findIndex(a => a.id === currentUser.id);
+    if (athleteIndex !== -1) {
+        athletes[athleteIndex].weight = newWeight;
+        localStorage.setItem('athletes', JSON.stringify(athletes));
+        updateAthleteInFirebase(currentUser.id, { weight: newWeight });
+    }
+    
+    currentUser.weight = newWeight;
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    
+    showAlert('home-alert', 'Peso atualizado com sucesso!', 'success');
+    renderUserDashboard();
+}
+
+function editWeight(athleteId) {
+    const athlete = athletes.find(a => a.id === athleteId);
+    if (!athlete) return;
+    
+    const newWeight = prompt(`Alterar peso para ${athlete.name}:`, athlete.weight);
+    if (newWeight !== null && !isNaN(parseFloat(newWeight))) {
+        athlete.weight = parseFloat(newWeight);
+        localStorage.setItem('athletes', JSON.stringify(athletes));
+        updateAthleteInFirebase(athleteId, { weight: parseFloat(newWeight) });
+        
+        if (currentUser && currentUser.id === athleteId) {
+            currentUser.weight = parseFloat(newWeight);
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        }
+        
+        renderAthleteList();
+        if (homePage.classList.contains('hidden')) {
+            showAlert('list-alert', 'Peso atualizado com sucesso!', 'success');
+        } else {
+            renderDashboard();
+        }
+    }
+}
+
+function deleteAllAthletes() {
+    if (confirm('Tem certeza que deseja excluir TODOS os atletas? Esta ação não pode ser desfeita.')) {
+        // Deletar todos do Firebase
+        if (db) {
+            athletes.forEach(athlete => {
+                deleteAthleteFromFirebase(athlete.id);
+            });
+        }
+        
+        athletes = [];
+        localStorage.setItem('athletes', JSON.stringify(athletes));
+        renderAthleteList();
+        renderDashboard();
+        showAlert('home-alert', 'Todos os atletas foram excluídos.', 'success');
+    }
+}
+
+function showAlert(containerId, message, type) {
+    const alertContainer = document.getElementById(containerId);
+    alertContainer.textContent = message;
+    alertContainer.classList.remove('hidden', 'alert-success', 'alert-error', 'alert-warning');
+    
+    if (type === 'success') {
+        alertContainer.classList.add('alert-success');
+    } else if (type === 'warning') {
+        alertContainer.classList.add('alert-warning');
+    } else {
+        alertContainer.classList.add('alert-error');
+    }
+    
+    setTimeout(() => {
+        alertContainer.classList.add('hidden');
+    }, 5000);
+}
+
+// Funções de eventos (mantidas)
 function renderEventsPage() {
     const userEvents = document.getElementById('user-events');
     const adminEvents = document.getElementById('admin-events');
@@ -944,99 +1461,6 @@ function showCreateEventModal() {
     createEventModal.classList.add('active');
 }
 
-function handleCreateExam(e) {
-    e.preventDefault();
-    const name = document.getElementById('exam-name').value;
-    const date = document.getElementById('exam-date').value;
-    const type = document.getElementById('exam-type').value;
-    
-    // Coletar participantes selecionados
-    const selectedAthletes = [];
-    const checkboxes = document.querySelectorAll('#exam-athletes-list input[type="checkbox"]:checked');
-    checkboxes.forEach(checkbox => {
-        const athleteId = checkbox.value;
-        const athlete = athletes.find(a => a.id === athleteId);
-        if (athlete) {
-            selectedAthletes.push({
-                athleteId: athlete.id,
-                name: athlete.name,
-                currentTkdBelt: athlete.tkdBelt,
-                currentHpkBelt: athlete.hpkBelt,
-                passed: false,
-                newTkdBelt: athlete.tkdBelt,
-                newHpkBelt: athlete.hpkBelt
-            });
-        }
-    });
-    
-    if (selectedAthletes.length === 0) {
-        showAlert('events-alert', 'Selecione pelo menos um atleta para o exame.', 'error');
-        return;
-    }
-    
-    const newExam = {
-        id: Date.now().toString(),
-        type: 'exam',
-        examType: type,
-        name,
-        date,
-        participants: selectedAthletes,
-        completed: false,
-        createdAt: new Date().toISOString()
-    };
-    
-    events.push(newExam);
-    localStorage.setItem('events', JSON.stringify(events));
-    
-    showAlert('events-alert', 'Exame criado com sucesso!', 'success');
-    document.getElementById('create-exam-form').reset();
-    createExamModal.classList.remove('active');
-    
-    renderEventsPage();
-}
-
-function handleCreateEvent(e) {
-    e.preventDefault();
-    const type = document.getElementById('event-type').value;
-    const name = document.getElementById('event-name').value;
-    const date = document.getElementById('event-date').value;
-    const description = document.getElementById('event-description').value;
-    
-    // Coletar participantes selecionados
-    const selectedAthletes = [];
-    const checkboxes = document.querySelectorAll('#event-athletes-list input[type="checkbox"]:checked');
-    checkboxes.forEach(checkbox => {
-        const athleteId = checkbox.value;
-        const athlete = athletes.find(a => a.id === athleteId);
-        if (athlete) {
-            selectedAthletes.push({
-                athleteId: athlete.id,
-                name: athlete.name
-            });
-        }
-    });
-    
-    const newEvent = {
-        id: Date.now().toString(),
-        type,
-        name,
-        date,
-        description,
-        participants: selectedAthletes,
-        completed: false,
-        createdAt: new Date().toISOString()
-    };
-    
-    events.push(newEvent);
-    localStorage.setItem('events', JSON.stringify(events));
-    
-    showAlert('events-alert', 'Evento criado com sucesso!', 'success');
-    document.getElementById('create-event-form').reset();
-    createEventModal.classList.remove('active');
-    
-    renderEventsPage();
-}
-
 function manageExam(eventId) {
     const event = events.find(e => e.id === eventId);
     if (!event) return;
@@ -1149,151 +1573,6 @@ function manageEvent(eventId) {
     manageEventModal.classList.add('active');
 }
 
-// Funções utilitárias
-function getBeltName(beltKey) {
-    const beltNames = {
-        'white': 'Branca', 'gray': 'Cinza', 'yellow': 'Amarela', 'orange': 'Laranja',
-        'green': 'Verde', 'blue-light': 'Azul Claro', 'blue-dark': 'Azul Escuro',
-        'blue': 'Azul', 'brown': 'Marrom', 'purple': 'Roxa', 'red': 'Vermelha',
-        'red-black': 'Ponta Preta', 'black': 'Preta'
-    };
-    
-    return beltNames[beltKey] || beltKey;
-}
-
-function getExamTypeName(type) {
-    const typeNames = {
-        'tkd': 'Taekwondo',
-        'hpk': 'Hapkido',
-        'both': 'Taekwondo e Hapkido'
-    };
-    
-    return typeNames[type] || type;
-}
-
-function getEventTypeName(type) {
-    const typeNames = {
-        'exam': 'Exame de Faixa',
-        'seminar': 'Seminário',
-        'championship': 'Campeonato',
-        'training': 'Treinamento',
-        'other': 'Outro'
-    };
-    
-    return typeNames[type] || type;
-}
-
-function generateBeltOptions(type, currentBelt, selectedBelt) {
-    const beltsTkd = ['white', 'yellow', 'orange', 'green', 'blue-light', 'blue-dark', 'purple', 'red', 'red-black', 'black'];
-    const beltsHpk = ['white', 'gray', 'yellow', 'orange', 'green', 'blue', 'brown', 'red', 'red-black', 'black'];
-    
-    const belts = type === 'tkd' ? beltsTkd : beltsHpk;
-    let options = '';
-    
-    belts.forEach(belt => {
-        if (belts.indexOf(belt) >= belts.indexOf(currentBelt)) {
-            options += `<option value="${belt}" ${belt === selectedBelt ? 'selected' : ''}>${getBeltName(belt)}</option>`;
-        }
-    });
-    
-    return options;
-}
-
-// Funções de ações
-function updateUserWeight() {
-    const newWeight = parseFloat(document.getElementById('update-weight').value);
-    if (isNaN(newWeight)) {
-        showAlert('home-alert', 'Por favor, insira um peso válido.', 'error');
-        return;
-    }
-    
-    const athleteIndex = athletes.findIndex(a => a.id === currentUser.id);
-    if (athleteIndex !== -1) {
-        athletes[athleteIndex].weight = newWeight;
-        localStorage.setItem('athletes', JSON.stringify(athletes));
-    }
-    
-    currentUser.weight = newWeight;
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
-    
-    showAlert('home-alert', 'Peso atualizado com sucesso!', 'success');
-    renderUserDashboard();
-}
-
-function editWeight(athleteId) {
-    const athlete = athletes.find(a => a.id === athleteId);
-    if (!athlete) return;
-    
-    const newWeight = prompt(`Alterar peso para ${athlete.name}:`, athlete.weight);
-    if (newWeight !== null && !isNaN(parseFloat(newWeight))) {
-        athlete.weight = parseFloat(newWeight);
-        localStorage.setItem('athletes', JSON.stringify(athletes));
-        
-        if (currentUser && currentUser.id === athleteId) {
-            currentUser.weight = parseFloat(newWeight);
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        }
-        
-        renderAthleteList();
-        if (homePage.classList.contains('hidden')) {
-            showAlert('list-alert', 'Peso atualizado com sucesso!', 'success');
-        } else {
-            renderDashboard();
-        }
-    }
-}
-
-function approveAthlete(athleteId) {
-    const athlete = athletes.find(a => a.id === athleteId);
-    if (!athlete) return;
-    
-    athlete.status = 'approved';
-    localStorage.setItem('athletes', JSON.stringify(athletes));
-    
-    if (currentUser && currentUser.id === athleteId) {
-        currentUser.status = 'approved';
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-    }
-    
-    renderAthleteList();
-    renderDashboard();
-    showAlert('home-alert', 'Atleta aprovado com sucesso!', 'success');
-}
-
-function deleteAthlete(athleteId) {
-    if (confirm('Tem certeza que deseja excluir este atleta?')) {
-        athletes = athletes.filter(a => a.id !== athleteId);
-        localStorage.setItem('athletes', JSON.stringify(athletes));
-        
-        if (currentUser && currentUser.id === athleteId) {
-            logout();
-        } else {
-            renderAthleteList();
-            renderDashboard();
-            showAlert('list-alert', 'Atleta excluído com sucesso!', 'success');
-        }
-    }
-}
-
-function deleteAllAthletes() {
-    if (confirm('Tem certeza que deseja excluir TODOS os atletas? Esta ação não pode ser desfeita.')) {
-        athletes = [];
-        localStorage.setItem('athletes', JSON.stringify(athletes));
-        renderAthleteList();
-        renderDashboard();
-        showAlert('home-alert', 'Todos os atletas foram excluídos.', 'success');
-    }
-}
-
-function deleteEvent(eventId) {
-    if (confirm('Tem certeza que deseja excluir este evento?')) {
-        events = events.filter(e => e.id !== eventId);
-        localStorage.setItem('events', JSON.stringify(events));
-        renderEventsPage();
-        showAlert('events-alert', 'Evento excluído com sucesso!', 'success');
-    }
-}
-
 function updateExamParticipantStatus(eventId, athleteId) {
     const event = events.find(e => e.id === eventId);
     if (!event) return;
@@ -1317,6 +1596,7 @@ function updateExamParticipantStatus(eventId, athleteId) {
         }
         
         localStorage.setItem('events', JSON.stringify(events));
+        updateEventInFirebase(eventId, { participants: event.participants });
     }
 }
 
@@ -1336,10 +1616,11 @@ function updateAllExamBelts(eventId) {
     });
     
     localStorage.setItem('events', JSON.stringify(events));
+    updateEventInFirebase(eventId, { participants: event.participants });
     showAlert('events-alert', 'Todas as faixas foram atualizadas!', 'success');
 }
 
-function completeExam(eventId) {
+async function completeExam(eventId) {
     const event = events.find(e => e.id === eventId);
     if (!event) return;
     
@@ -1355,12 +1636,20 @@ function completeExam(eventId) {
                     if (event.examType !== 'tkd') {
                         athlete.hpkBelt = participant.newHpkBelt;
                     }
+                    
+                    // Atualizar atleta no Firebase
+                    const updates = { tkdBelt: participant.newTkdBelt };
+                    if (event.examType !== 'tkd') {
+                        updates.hpkBelt = participant.newHpkBelt;
+                    }
+                    updateAthleteInFirebase(athlete.id, updates);
                 }
             }
         });
         
         localStorage.setItem('events', JSON.stringify(events));
         localStorage.setItem('athletes', JSON.stringify(athletes));
+        await updateEventInFirebase(eventId, { completed: true, participants: event.participants });
         
         showAlert('events-alert', 'Exame finalizado com sucesso! As faixas foram atualizadas.', 'success');
         manageExamModal.classList.remove('active');
@@ -1369,36 +1658,19 @@ function completeExam(eventId) {
     }
 }
 
-function completeEvent(eventId) {
+async function completeEvent(eventId) {
     const event = events.find(e => e.id === eventId);
     if (!event) return;
     
     if (confirm('Deseja marcar este evento como concluído?')) {
         event.completed = true;
         localStorage.setItem('events', JSON.stringify(events));
+        await updateEventInFirebase(eventId, { completed: true });
         
         showAlert('events-alert', 'Evento marcado como concluído!', 'success');
         manageEventModal.classList.remove('active');
         renderEventsPage();
     }
-}
-
-function showAlert(containerId, message, type) {
-    const alertContainer = document.getElementById(containerId);
-    alertContainer.textContent = message;
-    alertContainer.classList.remove('hidden', 'alert-success', 'alert-error', 'alert-warning');
-    
-    if (type === 'success') {
-        alertContainer.classList.add('alert-success');
-    } else if (type === 'warning') {
-        alertContainer.classList.add('alert-warning');
-    } else {
-        alertContainer.classList.add('alert-error');
-    }
-    
-    setTimeout(() => {
-        alertContainer.classList.add('hidden');
-    }, 5000);
 }
 
 // Tornar funções globais para os botões
